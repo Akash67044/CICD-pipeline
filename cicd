@@ -1,0 +1,65 @@
+pipeline {
+    agent any  // Jenkins agent auto-select karega
+    
+    environment {
+        AWS_REGION = 'us-east-1'  // AWS region define karein
+        DOCKER_IMAGE = 'my-app:latest'  // Docker image name
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/your-repo.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'  // Java project ke liye
+                sh 'npm install'        // Node.js project ke liye
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh 'mvn test'  // Unit tests run karein (Java)
+                sh 'npm test'  // Unit tests run karein (Node.js)
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t $DOCKER_IMAGE .'
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([string(credentialsId: 'docker-hub-password', variable: 'DOCKER_PASSWORD')]) {
+                    sh 'echo $DOCKER_PASSWORD | docker login -u my-docker-user --password-stdin'
+                    sh 'docker tag $DOCKER_IMAGE my-docker-user/$DOCKER_IMAGE'
+                    sh 'docker push my-docker-user/$DOCKER_IMAGE'
+                }
+            }
+        }
+
+        stage('Deploy to AWS') {
+            steps {
+                withAWS(region: "$AWS_REGION", credentials: 'aws-credentials') {
+                    sh 'aws ecs update-service --cluster my-cluster --service my-service --force-new-deployment'
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Deployment Successful!'
+            slackSend(channel: '#devops', message: '✅ Deployment Successful! 🚀')
+        }
+        failure {
+            echo '❌ Build Failed!'
+            slackSend(channel: '#devops', message: '❌ Build Failed! 🔴')
+        }
+    }
+}
